@@ -21,8 +21,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 http://www.gnu.org/copyleft/gpl.html
 '''
 
-# TODO adapts to sparse matrices!
-
 import os
 import sys
 

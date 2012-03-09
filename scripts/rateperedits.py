@@ -83,7 +83,7 @@ def main(ns):
     pp.xlim(1,2e6)
     pp.ylim(1e-9,.1)
     pp.xlabel('edits')
-    pp.ylabel(r'activity (${\rm sec} ^ {-1}$)')
+    pp.ylabel('activity (1/s)')
     pp.draw()
     pp.show()
 
