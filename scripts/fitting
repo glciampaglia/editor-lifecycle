@@ -53,6 +53,8 @@ parent.add_argument('-force', action='store_true', help='force overwrite')
 parent.add_argument('-minsize', type=int)
 parent.add_argument('-c', '--chop-tail', type=int, default=0, metavar='NUM',
         help='remove %(metavar)s tail observations')
+parent.add_argument('-xmax', type=int, help='show only (0,xmax) interval')
+parent.add_argument('-snr', type=float, help='minimum signal-to-noise ratio')
 
 parser = ArgumentParser(description=__doc__)
 subparsers = parser.add_subparsers(help='Parametric models supported')
@@ -80,13 +82,16 @@ def plotfit(model, x, y, ye, label='data', **kwargs):
     yy = model(xx)
     kwargs['ecolor'] = 'none'
     kwargs['ls'] = 'none'
-    pp.errorbar(x, y, ye / 2, label=label, **kwargs)
+    kwargs['mfc'] = kwargs.get('color', 'k')
+    kwargs['ms'] = 4
+    pp.errorbar(x, y, ye, label=label, **kwargs)
+#    pp.plot(x, y, label=label, **kwargs)
     model_label = model.name.split()
     if len(model_label) > 1:
         model_label[1] = model_label[1][:3] + '.'
     model_label = ' '.join(model_label[:2]).capitalize()
     c = kwargs.get('color', 'r')
-    pp.plot(xx, yy, '--', color=c, label='{} fit'.format(model_label), lw=2.5)
+    pp.plot(xx, yy, '--', color=c, lw=2)
     if ns.loglog:
         pp.xscale('log')
         pp.yscale('log')
@@ -105,6 +110,8 @@ def plotresid(model, x, y, label='data', **kwargs):
 #    r /= np.abs(rm)
     pp.axhline(y=0, c='k')
     kwargs['ls'] = ':'
+    kwargs['lw'] = 2
+    kwargs['ms'] = 4
     pp.plot(x, r, label=label, **kwargs)
     pp.title('Fit residuals')
     pp.xlabel('Days since registration')
@@ -143,13 +150,17 @@ def fit(data_file, modelclass, constrain=None, minsize=None):
     * both : A = y[0] and C = y[-1]
     '''
     x, y, ye, n = np.loadtxt(data_file, unpack=True)
-    x = x[:-ns.chop_tail]
-    y = y[:-ns.chop_tail]
-    ye = ye[:-ns.chop_tail]
-    n = n[:-ns.chop_tail]
-    idx = ye > 0
-    if minsize:
-        idx = idx * (n > minsize)
+    # XXX using the S/N ratio to filter out noisy estimates of the ratio
+    s = ye / np.sqrt(n)
+    snr = y / s
+    idx = snr >= ns.snr
+#     x = x[:-ns.chop_tail]
+#     y = y[:-ns.chop_tail]
+#     ye = ye[:-ns.chop_tail]
+#     n = n[:-ns.chop_tail]
+    idx = idx * (ye > 0)
+#     if minsize:
+#         idx = idx * (n > minsize)
     if not np.any(idx):
         raise EmptyDataError()
     if np.sum(idx) < len(modelclass.__params__):
@@ -157,6 +168,11 @@ def fit(data_file, modelclass, constrain=None, minsize=None):
     x = x[idx]
     y = y[idx]
     ye = ye[idx]
+    n = n[idx]
+    # XXX <Sat Oct 29 17:30:38 CEST 2011> getting the standard error of the
+    # mean. This should be really computed in in lifecycle.rates and new data
+    # files be produced using mkrates.
+    ye = ye / np.sqrt(n)
     model = modelclass()
     if constrain in ['head', 'both']:
         model.A = y[np.argmin(np.abs(x))]
@@ -177,11 +193,14 @@ def fit(data_file, modelclass, constrain=None, minsize=None):
 
 def main(ns):
     # import matploblib 
-    from matplotlib.lines import lineMarkers as markers
-    markers = dict(filter(
-            lambda k : isinstance(k[0],str) and k[1] is not '_draw_nothing',
-            markers.items())).keys()
-    colors = 'bgcmykw'
+#     from matplotlib.lines import lineMarkers as markers
+#     markers = dict(filter(
+#             lambda k : isinstance(k[0],str) and k[1] is not '_draw_nothing',
+#             markers.items())).keys()
+#     markers.remove('.')
+#     markers.remove(',')
+    markers = 'oD^vs*hHpdv<>'
+    colors = 'brgkcmyw'
 
     data = []
     models = []
@@ -199,7 +218,8 @@ def main(ns):
             continue
         data.append((x,y,ye))
         models.append(model)
-        labels.append(os.path.splitext(f)[0])
+        lab = os.path.splitext(os.path.basename(f))[0]
+        labels.append(lab.replace('_','\\_'))
     
     # plot fits 
     pp.figure()
@@ -208,6 +228,8 @@ def main(ns):
         m = markers[i % len(markers)]
         c = colors[i % len(colors)]
         plotfit(model, x, y, ye, label, marker=m, color=c)
+        if ns.xmax is not None:
+            pp.xlim(0, ns.xmax)
 
     # plot residuals
     pp.figure()
@@ -216,6 +238,8 @@ def main(ns):
         m = markers[i % len(markers)]
         c = colors[i % len(colors)]
         plotresid(model, x, y, label, marker=m, color=c)
+        if ns.xmax is not None:
+            pp.xlim(0, ns.xmax)
 
     # save figures
     if ns.output_file is not None:
