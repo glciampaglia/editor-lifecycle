@@ -1,0 +1,55 @@
+#!/usr/bin/python
+#:vim:ft=python
+# encoding:utf-8
+
+''' fits daily count samples '''
+
+import os
+from contextlib import closing
+from argparse import ArgumentParser
+import numpy as np
+from scipy.stats import nbinom, geom, poisson, chisquare
+from scipy.optimize import fmin
+import matplotlib.pyplot as pp
+
+parser = ArgumentParser(description=__doc__)
+parser.add_argument('input_path', metavar='file')
+
+models = [ nbinom, ] # poisson, geom ]
+initial_args = { 'nbinom' : (5,.5), 'poisson' : (10,), 'geom' : (.5,) }
+
+def main(args):
+    model_params = {}
+    model_pvalue = {}
+    with closing(open(args.input_path)) as infile:
+        for i, line in enumerate(infile):
+            sample = np.asarray(map(int, line.split()))
+            if len(sample) < 5:
+                print 'day %d: skipping rest of file' % i
+                break
+            f_obs, bins = np.histogram(sample, bins=sample.ptp() or 1)
+            for rv in models:
+                nll = lambda k : - rv(*k).logpmf(sample).sum()
+                beta = fmin(nll, initial_args[rv.name], disp=False)
+                f_exp = rv(*beta).pmf(bins[:-1]) * sample.sum()
+                chisq, pval = chisquare(f_obs, f_exp, rv.numargs)
+                try:
+                    model_params[rv.name].append(beta)
+                    model_pvalue[rv.name].append(pval)
+                except KeyError:
+                    model_params[rv.name] = [ beta ] 
+                    model_pvalue[rv.name] = [ pval ]
+            print 'day %d: done' % i
+    for rv in models:
+        model_params[rv.name] = np.asarray(model_params[rv.name])
+        model_pvalue[rv.name] = np.asarray(model_pvalue[rv.name])
+    return model_params, model_pvalue
+
+
+#        pp.scatter(params.T[0], params.T[1], c='k', marker='.')
+#        pp.show()
+        
+
+if __name__ == '__main__':
+    args = parser.parse_args()
+    params, pvalues = main(args)
