@@ -348,6 +348,7 @@ class PowerLaw(ParametricModel):
 if __name__ == '__main__':
 
     import matplotlib.pyplot as pp
+    from matplotlib.font_manager import FontProperties
     import scale
 
     model = StretchedExpon()
@@ -373,15 +374,15 @@ if __name__ == '__main__':
     pp.xscale('power', exponent=beta)
     pp.yscale('log')
 
-    pp.legend()
     gof, resid, Rsquared = model.gof(x, y, s)
     model.goftest = gof
     model.residtest = resid
     model.Rsquared = Rsquared
     print model.summary()
     chi, p, ddof = gof
-    pp.text(200, 1, r'$\chi^2 = %.2f,\, p-{\rm value} = %5.2g,\,'
+    pp.text(1, 2e-3, r'$\chi^2 = %.2f,\, p = %5.2g,\,'
             r'{\rm ddof} = %d,\, R^2 = %.2f$'
             % (chi,p,ddof, Rsquared), 
-            fontsize=16)
+            fontsize=10)
+    pp.legend(loc='best', prop=FontProperties(size='x-small'))
     pp.show()

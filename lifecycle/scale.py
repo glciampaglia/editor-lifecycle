@@ -57,7 +57,7 @@ class PowerFormatter(Formatter):
     def __init__(self, exponent):
         self.exponent = exponent
     def __call__(self, x, pos=None):
-        return u'%.2g' % (x ** (1.0 / self.exponent))
+        return '%.3g' % x
 
 class PowerTransform(Transform):
     input_dims = 1
