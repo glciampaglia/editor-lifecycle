@@ -2,25 +2,23 @@
 # coding: utf-8
 # :vim:ft=python
 
-''' editor lifecycle data fitting tool '''
+''' fits data to a parametric model '''
 
-'''
-Copyright (C) 2011 GIOVANNI LUCA CIAMPAGLIA, GCIAMPAGLIA@WIKIMEDIA.ORG
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-http://www.gnu.org/copyleft/gpl.html
-'''
+# Copyright (C) 2011 GIOVANNI LUCA CIAMPAGLIA, GCIAMPAGLIA@WIKIMEDIA.ORG
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+# http://www.gnu.org/copyleft/gpl.html
 
 __author__ = "Giovanni Luca Ciampaglia"
 __email__ = "gciampaglia@wikimedia.org"
@@ -29,7 +27,6 @@ import sys
 import os
 import numpy as np
 import matplotlib.pyplot as pp
-from matplotlib.font_manager import FontProperties
 from argparse import ArgumentParser
 from scipy.optimize import curve_fit
 
@@ -38,146 +35,84 @@ import lifecycle.scale
 
 __prog__ = os.path.basename(os.path.abspath(__file__))
 
-_maxfev = 100000
-
-parent = ArgumentParser(add_help=False)
-parent.add_argument('data_files', metavar='DATA', nargs='+')
-parent.add_argument('-output', dest='output_file', metavar='FILE')
-parent.add_argument('-title')
-group = parent.add_mutually_exclusive_group()
-group.add_argument('-loglog', action='store_true')
-group.add_argument('-logpow', action='store_true')
-parent.add_argument('-constrain', choices=['head', 'tail', 'both'])
-parent.add_argument('-batch', action='store_true', help='do not show graphics')
-parent.add_argument('-force', action='store_true', help='force overwrite')
-parent.add_argument('-minsize', type=int)
-parent.add_argument('-c', '--chop-tail', type=int, default=0, metavar='NUM',
-        help='remove %(metavar)s tail observations')
-parent.add_argument('-xmax', type=int, help='show only (0,xmax) interval')
-parent.add_argument('-snr', type=float, help='minimum signal-to-noise ratio')
+_maxfev = 10000
 
 parser = ArgumentParser(description=__doc__)
-subparsers = parser.add_subparsers(help='Parametric models supported')
+parser.add_argument(
+        'path', 
+        metavar='FILE',
+        help='input text data file')
+parser.add_argument(
+        '-C',
+        '--directory',
+        help='output directory',
+        dest='output_dir',
+        default=os.curdir,
+        metavar='DIR')
+parser.add_argument(
+        '-f',
+        '--force', 
+        action='store_true', 
+        dest='force_overwrite',
+        help='force overwrite')
+parser.add_argument(
+        '-b',
+        '--batch', 
+        action='store_true', 
+        help='do not show graphics')
 
-parser_expon = subparsers.add_parser('expon', parents=[parent])
-parser_expon.set_defaults(modelclass=Expon)
+model_group = parser.add_mutually_exclusive_group(required=1)
+model_group.add_argument(
+        '-me',
+        '--expon', 
+        action='store_const',
+        const=Expon, 
+        help='exponential model',
+        dest='modelclass')
+model_group.add_argument(
+        '-ms',
+        '--stretched', 
+        action='store_const',
+        const=StretchedExpon, 
+        help='stretched exponential model',
+        dest='modelclass')
+model_group.add_argument(
+        '-mp',
+        '--power-law', 
+        action='store_const',
+        const=PowerLaw, 
+        help='power-law model',
+        dest='modelclass')
 
-parser_stretch = subparsers.add_parser('stretchedexp', parents=[parent])
-parser_stretch.set_defaults(modelclass=StretchedExpon)
+group = parser.add_mutually_exclusive_group()
+group.add_argument(
+        '-ll', 
+        '--loglog', 
+        action='store_true', 
+        help='display log-power axis')
+group.add_argument(
+        '-lp',
+        '--logpow',
+        help='display log-log axis',
+        action='store_true')
 
-parser_power = subparsers.add_parser('powerlaw', parents=[parent])
-parser_power.set_defaults(modelclass=PowerLaw)
-
-class DataError(Exception):
-    pass
-
-class TooFewDataError(DataError):
-    pass
-
-class EmptyDataError(DataError):
-    pass
-
-def plotfit(model, x, y, ye, label='data', **kwargs):
-    xx = np.linspace(x.min(), x.max(), endpoint=True, num=1000)
-    yy = model(xx)
-    kwargs['ecolor'] = 'none'
-    kwargs['ls'] = 'none'
-    kwargs['mfc'] = kwargs.get('color', 'k')
-    kwargs['ms'] = 4
-    pp.errorbar(x, y, ye, label=label, **kwargs)
-#    pp.plot(x, y, label=label, **kwargs)
-    model_label = model.name.split()
-    if len(model_label) > 1:
-        model_label[1] = model_label[1][:3] + '.'
-    model_label = ' '.join(model_label[:2]).capitalize()
-    c = kwargs.get('color', 'r')
-    pp.plot(xx, yy, '--', color=c, lw=2)
-    if ns.loglog:
-        pp.xscale('log')
-        pp.yscale('log')
-    elif ns.logpow:
-        pp.xscale('power', exponent=model.beta)
-        pp.yscale('log')
-    pp.legend(loc='best', prop=FontProperties(size='x-small'))
-    if ns.title is not None:
-        pp.title(ns.title)
-    pp.xlabel('Days since registration')
-    pp.ylabel('Edits/day')
-
-def plotresid(model, x, y, label='data', **kwargs):
-    r = model(x) - y
-#    rm = r[True - np.isinf(r)].max()
-#    r /= np.abs(rm)
-    pp.axhline(y=0, c='k')
-    kwargs['ls'] = ':'
-    kwargs['lw'] = 2
-    kwargs['ms'] = 4
-    pp.plot(x, r, label=label, **kwargs)
-    pp.title('Fit residuals')
-    pp.xlabel('Days since registration')
-#    pp.ylabel(r'Relative residual $\xi / \max{|\xi|}$')
-#    pp.ylim(-1,1)
-    pp.draw()
-
-def _testoverwrite(*files):
-    exit_flag = False
-    for fn in files:
-        if os.path.exists(fn):
-            exit_flag = True
-            print '%s: error: cannot overwrite %s' % (__prog__, fn)
-    if exit_flag:
-        sys.exit(1)
-
-# TODO add usecols and option for taking only observations based on minimum
-# sample size
-
-def fit(data_file, modelclass, constrain=None, minsize=None):
+def fit(path, modelclass):
     '''
-    Fits a model to data. Data are read from `data_file` and the model is
-    specified as a `modelclass` (see `lifecycle.models`). The data file should
-    contain a (N,4) array where columns are x, y, ye (errors) and n (sample
-    sizes -- number of users on which the average rate y is computed).
+    fits a `lifecycle.models.ParametricModel`
 
     Parameters
     ----------
-    If `modelclass` is any of `Expon` or `StretchedExpon`, one can constrain the
-    value of some parameters before performing the fit. To this end one can use
-    the parameter `constrain`, which can be any of the following strings: 
-    'both', 'head', or 'tail'. Their meaning is the following:
+    path - a path to a text file with data (x, y, ye)
+    modelclass - a subclass of `lifecycle.models.ParametricModel`. 
+        See docstring of `lifecycle.models` for a list of available models
 
-    * head : A = y[0]
-    * tail : C = y[-1]
-    * both : A = y[0] and C = y[-1]
+    Returns
+    -------
+    x, y, ye - data loaded from `path`
+    model - a fitted model of class `modelclass`
     '''
-    x, y, ye, n = np.loadtxt(data_file, unpack=True)
-    # XXX using the S/N ratio to filter out noisy estimates of the ratio
-    s = ye / np.sqrt(n)
-    snr = y / s
-    idx = snr >= ns.snr
-#     x = x[:-ns.chop_tail]
-#     y = y[:-ns.chop_tail]
-#     ye = ye[:-ns.chop_tail]
-#     n = n[:-ns.chop_tail]
-    idx = idx * (ye > 0)
-#     if minsize:
-#         idx = idx * (n > minsize)
-    if not np.any(idx):
-        raise EmptyDataError()
-    if np.sum(idx) < len(modelclass.__params__):
-        raise TooFewDataError()
-    x = x[idx]
-    y = y[idx]
-    ye = ye[idx]
-    n = n[idx]
-    # XXX <Sat Oct 29 17:30:38 CEST 2011> getting the standard error of the
-    # mean. This should be really computed in in lifecycle.rates and new data
-    # files be produced using mkrates.
-    ye = ye / np.sqrt(n)
+    x, y, ye = np.loadtxt(path, unpack=True)
     model = modelclass()
-    if constrain in ['head', 'both']:
-        model.A = y[np.argmin(np.abs(x))]
-    if constrain in ['tail', 'both']:
-        model.C = y.min()
     pest, pcov = model.fit(x, y, ye=ye, maxfev=_maxfev)
     if not np.isscalar(pcov):
         perr = np.sqrt(np.diag(pcov)) / 2.
@@ -188,82 +123,107 @@ def fit(data_file, modelclass, constrain=None, minsize=None):
     model.goftest = gof
     model.residtest = resid
     model.Rsquared = Rsquared
-    print model.summary(dataset=data_file, observations=len(x))
+    print model.summary(dataset=path, observations=len(x))
     return x, y, ye, model
 
+# plotfit, data
+_kwargs1 = { 
+        'color' : 'black',
+        'marker' : 'o',
+        'ecolor' : 'none',
+        'ls' : 'none',
+        'ms' : 2,
+}
+
+# plotfit, fitted curve
+_kwargs2 = { 
+        'color' : 'darkgray',
+        'lw' : 2,
+        'ls' : '-',
+}
+
+# plotresid
+_kwargs3 = {
+        'marker' : 'o',
+        'color' : 'black',
+        'ls' : 'none',
+        'lw' : 2,
+        'ms' : 4,
+}
+
 def main(ns):
-    # import matploblib 
-#     from matplotlib.lines import lineMarkers as markers
-#     markers = dict(filter(
-#             lambda k : isinstance(k[0],str) and k[1] is not '_draw_nothing',
-#             markers.items())).keys()
-#     markers.remove('.')
-#     markers.remove(',')
-    markers = 'oD^vs*hHpdv<>'
-    colors = 'brgkcmyw'
+    # test output dir exists
+    if not os.path.isdir(ns.output_dir):
+        print >> sys.stderr, '%s: error: not an existing directory: %s' %\
+                (__prog__, ns.output_dir)
+        sys.exit(1)
 
-    data = []
-    models = []
-    labels = []
+    # test input file exists
+    if not os.path.exists(ns.path):
+        print >> sys.stderr, '%s: error: not such file: %s' % (__prog__,
+                ns.path)
+        sys.exit(1)
+    title, _ = os.path.splitext(os.path.basename(ns.path))
 
-    # fit all datasets
-    for f in ns.data_files:
-        try:
-            x, y, ye, model = fit(f, ns.modelclass, ns.constrain, ns.minsize)
-        except TooFewDataError:
-            print >> sys.stderr, '%s: warning: too few data: %s' % (__prog__, f)
-            continue
-        except EmptyDataError:
-            print >> sys.stderr, '%s: warning: no usable data: %s'% (__prog__, f)
-            continue
-        data.append((x,y,ye))
-        models.append(model)
-        lab = os.path.splitext(os.path.basename(f))[0]
-        labels.append(lab.replace('_','\\_'))
-    
-    # plot fits 
+    # test path to fit plot file does not exists (unless --force was passed)
+    plot_path = os.path.join(ns.output_dir, title + '.pdf')
+    if os.path.exists(plot_path) and not ns.force_overwrite:
+        print >> sys.stderr, '%s: error: file exists (pass --force): %s' %\
+                (__prog__, plot_path)
+        sys.exit(1)
+
+    # test path to residuals plot file does not exists (unless --force was
+    # passed)
+    resid_plot_path = os.path.join(ns.output_dir, 'resid_' + title + '.pdf')
+    if os.path.exists(resid_plot_path) and not ns.force_overwrite:
+        print >> sys.stderr, '%s: error: file exists (pass --force): %s' %\
+                (__prog__, resid_plot_path)
+        sys.exit(1)
+
+    # fit the model
+    x, y, ye, model = fit(ns.path, ns.modelclass)
+
+    # plot fitted curve and data
     pp.figure()
-    pp.hold(1)
-    for i, ((x, y, ye), model, label) in enumerate(zip(data, models, labels)):
-        m = markers[i % len(markers)]
-        c = colors[i % len(colors)]
-        plotfit(model, x, y, ye, label, marker=m, color=c)
-        if ns.xmax is not None:
-            pp.xlim(0, ns.xmax)
+    xx = np.linspace(x.min(), x.max(), endpoint=True, num=len(x) * 3 - 1)
+    yy = model(xx)
+    pp.plot(xx, yy, **_kwargs2)
+    pp.errorbar(x, y, ye, **_kwargs1)
+
+    # set axes scale
+    if ns.loglog:
+        pp.xscale('log')
+        pp.yscale('log')
+    elif ns.logpow:
+        pp.xscale('power', exponent=model.beta)
+        pp.yscale('log')
+
+    # title, axis labels
+    pp.title(title.replace('_','\\_'))
+    pp.xlabel('Days since registration')
+    pp.ylabel('Edits/day')
+    pp.draw()
+    pp.savefig(plot_path)
+    print '%s: fit plot saved to %s' % (__prog__, plot_path)
 
     # plot residuals
     pp.figure()
-    pp.hold(1)
-    for i, ((x, y, ye), model, label) in enumerate(zip(data, models, labels)):
-        m = markers[i % len(markers)]
-        c = colors[i % len(colors)]
-        plotresid(model, x, y, label, marker=m, color=c)
-        if ns.xmax is not None:
-            pp.xlim(0, ns.xmax)
+    r = model(x) - y
+    pp.axhline(y=0, c='k')
+    pp.plot(x, r, hold=1, **_kwargs3)
 
-    # save figures
-    if ns.output_file is not None:
-        fn, ext = os.path.splitext(ns.output_file)
-        fmt = ext[1:]
-        if ns.batch and fmt.lower() != 'pdf':
-            print '%s: error: batch mode supports only PDF format' % __prog__
-            sys.exit(1)
-        resid_output_file = fn + '_residuals' + ext
-        if not ns.force:
-            _testoverwrite(ns.output_file, resid_output_file)
-        pp.figure(1)
-        pp.savefig(ns.output_file, format=fmt)
-        print '%s: output saved to %s' % (__prog__, ns.output_file)
-        pp.figure(2)
-        pp.savefig(resid_output_file, format=fmt)
-        print '%s: output saved to %s' % (__prog__, resid_output_file)
+    # title, axis labels
+    pp.title(title.replace('_','\\_'))
+    pp.ylabel('Residuals')
+    pp.xlabel('Days since registration')
+    pp.draw()
+    pp.savefig(resid_plot_path)
+    print '%s: residuals plot saved to %s' % (__prog__, resid_plot_path)
 
-    pp.show()
+    if not ns.batch:
+        pp.show()
 
 if __name__ == '__main__':
+    # parse arguments from command line
     ns = parser.parse_args()
-#    if ns.batch:
-#        import matplotlib
-#        matplotlib.use('PDF')
-#    import matplotlib.pyplot as pp
     main(ns)
