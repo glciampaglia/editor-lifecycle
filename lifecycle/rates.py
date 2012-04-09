@@ -61,13 +61,14 @@ def cohortrate(npzarchive, onlyns=None, minsize=None, minsnr=None):
         compute activity rates only with edits to these namespaces
     minsize - positive int
         filter out activity rate estimates based on sample of size less than
-    minsize minsnr - positive real
+    minsnr - positive real
         filter out activity rate estimates with signal-to-noise rate less than
         parameter
 
     Returns
     -------
-    an array of daily activity rate observations, together estimated uncertainties 
+    an array of daily activity rate observations, together estimated
+    uncertainties 
     '''
     day_counts = {}
 

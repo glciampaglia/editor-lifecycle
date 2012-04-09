@@ -1,26 +1,22 @@
 #!/usr/bin/python
 
-'''
-computes average activity rates from downloaded user counts archive files
-'''
+''' computes average activity rates from cohort archives with user counts '''
 
-'''
-Copyright (C) 2011 GIOVANNI LUCA CIAMPAGLIA, GCIAMPAGLIA@WIKIMEDIA.ORG
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-http://www.gnu.org/copyleft/gpl.html
-'''
+# Copyright (C) 2011 GIOVANNI LUCA CIAMPAGLIA, GCIAMPAGLIA@WIKIMEDIA.ORG
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+# http://www.gnu.org/copyleft/gpl.html
 
 __author__ = "Giovanni Luca Ciampaglia"
 __email__ = "gciampaglia@wikimedia.org"
@@ -31,23 +27,81 @@ import numpy as np
 
 from argparse import ArgumentParser
 
-from lifecycle.rates import computerates
+from lifecycle.rates import cohortrate
 
 parser = ArgumentParser(description=__doc__)
-parser.add_argument('input_path_list', metavar='data', nargs='+')
-parser.add_argument('-outdir', dest='output_dir', default=os.curdir)
-parser.add_argument('-every', type=int, help='default: average over %(default)d days',
-        default=30, metavar='NUM')
-parser.add_argument('-n', '--namespace', type=int, action='append', help='select only these NS',
+parser.add_argument(
+        'input_path_list', 
+        metavar='FILE',
+        help='cohort archive(s)',
+        nargs='+')
+parser.add_argument(
+        '-C',
+        '--directory', 
+        dest='output_dir', 
+        default=os.curdir,
+        help='output to directory %(metavar)s',
+        metavar='DIR')
+parser.add_argument(
+        '-n',
+        '--namespace',
+        type=int,
+        action='append',
+        metavar='NS',
+        help='compute rates only with edits to %(metavar)s (may specify this '\
+                'argument multiple times)',
         dest='only')
-parser.add_argument('-G', '--geometric', action='store_true', help='compute '
-        'geometric mean and standard deviation of data')
+parser.add_argument(
+        '-s',
+        '--snr',
+        dest='minsnr',
+        type=float,
+        metavar='RATIO',
+        help='minimum signal-to-noise ratio of observations')
+parser.add_argument(
+        '-m',
+        '--size',
+        type=int,
+        dest='minsize',
+        metavar='SIZE',
+        help='compute averages over samples of minimum size only')
 
-__prog__ = os.path.basename(__file__)
+__prog__ = os.path.basename(os.path.abspath(__file__))
 
 def main(ns):
+    
+    # test output directory exists
+    if not os.path.isdir(ns.output_dir):
+        print >> sys.stderr, '%s: error: not an existing directory: %s' % \
+                (__prog__, ns.output_dir)
+        sys.exit(1)
 
+    # check SNR argument and if OK feedback to user
+    if ns.minsnr is not None:
+        if ns.minsnr <= 0:
+            print >> sys.stderr, '%s: error: SNR is not a ratio: %g' % (__prog__,
+                    ns.minsnr)
+            sys.exit(1)
+        else: 
+            print '%s: minimum signal-to-noise ratio: %g' % (__prog__,
+                    ns.minsnr)
+
+    # check size argument and if OK feedback to user
+    if ns.minsize is not None:
+        if ns.minsize <= 0:
+            print >> sys.stderr, '%s: error: not a valid sample size: %d' %\
+                    (__prog__, ns.minsize)
+        else:
+            print '%s: minimum sample size: %d' % (__prog__, ns.minsize)
+
+    # loop over inputs
     for path in ns.input_path_list:
+
+        # check input path exists
+        if not os.path.exists(path):
+            print >> sys.stderr, '%s: error: skipping non-existing file: %s' %\
+                    (__prog__, path)
+            continue
 
         # define output path
         output_path = os.path.basename(path)
@@ -55,13 +109,14 @@ def main(ns):
         output_path = os.path.join(ns.output_dir, output_path)
 
         # compute rates for this cohort and save them to file
-        rates = computerates(path, ns.every, onlyns=ns.only,
-                geometric=ns.geometric)
-        np.savetxt(output_path, rates, fmt='%d\t%12.8g\t%12.8g\t%d')
+        npzarc = np.load(path)
+        rates = cohortrate(npzarc, onlyns=ns.only, minsnr=ns.minsnr,
+                minsize=ns.minsize)
+        np.savetxt(output_path, rates, fmt='%d\t%12.8g\t%12.8g')
         print '%s: output saved to %s' % (__prog__, output_path)
 
 if __name__ == '__main__':
-    # get arguments from command line
+    # parse arguments from command line
     ns = parser.parse_args()
     main(ns)
 
