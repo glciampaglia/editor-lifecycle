@@ -2,23 +2,21 @@
 
 ''' Fetches and computes daily edit rates for cohorts of users '''
 
-'''
-Copyright (C) 2011 GIOVANNI LUCA CIAMPAGLIA, GCIAMPAGLIA@WIKIMEDIA.ORG
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along
-with this program; if not, write to the Free Software Foundation, Inc.,
-51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-http://www.gnu.org/copyleft/gpl.html
-'''
+# Copyright (C) 2011 GIOVANNI LUCA CIAMPAGLIA, GCIAMPAGLIA@WIKIMEDIA.ORG
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+# http://www.gnu.org/copyleft/gpl.html
 
 __author__ = "Giovanni Luca Ciampaglia"
 __email__ = "gciampaglia@wikimedia.org"
@@ -57,27 +55,9 @@ order by rev_timestamp
 
 __prog__ = os.path.basename(os.path.abspath(__file__))
 
-# def iterateoversets(cursor):
-#     yield list(cursor)
-#     while cursor.nextset():
-#         yield list(cursor)
 
 def process(rows, user_id, output_dir=os.path.curdir):
-    if len(rows) == 0:
-        print >> sys.stderr, '%s: error: empty revision history for user %d' % (__prog__,
-                user_id)
-        return
-
-    rev_time, rev_ns = np.asfarray(rows).T
-    m, M = np.floor(rev_time.min()), np.ceil(rev_time.max())
-    uns = sorted(np.unique(rev_ns))
-    bins_time = np.arange(m,M + 1)
-    bins_ns = uns + [uns[-1] + 1]
-    rates, days, _ = np.histogram2d(rev_time, rev_ns, bins=(bins_time, bins_ns))
-    I,J = np.nonzero(rates)
-    data = [ (days[i],uns[j],rates[i,j]) for i, j in zip(I,J) ] # in coordinate format
-    dtype=np.dtype([('day', int), ('ns', int), ('edits', int)])
-    data = np.asarray(data, dtype=dtype)
+    data = userrate(rows)
     out_path = os.path.join(output_dir, '%d.npy' % user_id)
     np.save(out_path, data)
     return out_path
