@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-''' Fetches and computes daily edit rates for cohorts of users '''
+''' Fetches edit count data from database '''
 
 # Copyright (C) 2011 GIOVANNI LUCA CIAMPAGLIA, GCIAMPAGLIA@WIKIMEDIA.ORG
 # This program is free software; you can redistribute it and/or modify
@@ -28,102 +28,98 @@ import numpy as np
 from zipfile import ZipFile
 from contextlib import closing
 from tempfile import mkdtemp
-from oursql import connect
+from oursql import connect, InterfaceError
 from argparse import ArgumentParser
 from datetime import datetime
 
-from lifecycle.rates import computerates
+from lifecycle.rates import userrate
 
 parser = ArgumentParser(description=__doc__)
-parser.add_argument('input_path', metavar='cohort')
-parser.add_argument('-config', dest='config_file')
-parser.add_argument('-outdir', dest='output_dir', default=os.curdir)
-parser.add_argument('-v','--verbose', action='store_true')
-parser.add_argument('-every', type=int, help='default: average over %(default)d days',
-        default=30, metavar='NUM')
-parser.add_argument('-ns', type=int, action='append', help='select only these NS',
-        dest='only')
-parser.add_argument('--save-cohort', dest='rates_only', action='store_false')
+parser.add_argument(
+            'input_path', 
+            metavar='FILE',
+            help='cohort file (with user ids on a single line)')
+parser.add_argument(
+            '-config', 
+            dest='config_file', 
+            metavar='FILE', 
+            default='~/.my.cnf',
+            help='mysql config file (default: %(default)s)')
+parser.add_argument(
+            '-outdir', 
+            dest='output_dir', 
+            help='output directory',
+            metavar='DIR',
+            default=os.curdir)
 
-query = """
-select unix_timestamp(rev_timestamp)/86400.0, page_namespace
-from revision r join page p
-on r.rev_page = p.page_id
-where rev_user = ?
-order by rev_timestamp
+_query = """
+SELECT UNIX_TIMESTAMP(rev_timestamp)/86400.0, page_namespace
+FROM revision r 
+JOIN page p
+ON r.rev_page = p.page_id
+WHERE rev_user = ?
+ORDER BY rev_timestamp
 """
 
 __prog__ = os.path.basename(os.path.abspath(__file__))
 
-
-def process(rows, user_id, output_dir=os.path.curdir):
-    data = userrate(rows)
-    out_path = os.path.join(output_dir, '%d.npy' % user_id)
-    np.save(out_path, data)
-    return out_path
-
 def main(ns):
-    # get mysql client configuration file
-    mycnf = os.path.expanduser('~/.my.cnf')
-    if ns.config_file is None and not os.path.exists(mycnf):
-        print >> sys.stderr, '%s: no config file specified and $HOME/.my.cnf'
-        ' not found' % __prog__
+    # test configuration file for mysql client exists
+    cnf = os.path.expanduser(os.path.expandvars(ns.config_file))
+    if not os.path.exists(cnf):
+        print >> sys.stderr, '%s: error: no config file found: %s' % (__prog__, cnf)
         sys.exit(1)
-    elif ns.config_file is None:
-        ns.config_file = mycnf
 
-    # test output directory exists
-    if not os.path.exists(ns.output_dir):
-        print >> sys.stderr, '%s: output directory does not exist: %s' % (
-                __prog__, ns.output_dir)
-        sys.exit(1)
+    # test output path exists and is a directory
     if not os.path.isdir(ns.output_dir):
-        print >> sys.stderr, '%s: not a directory: %s' % (__prog__, ns.output_dir)
- 
+        print >> sys.stderr, '%s: error: not an existing directory: %s' % (__prog__, 
+                ns.output_dir)
+        sys.exit(1)
+
     # read user ids from cohort file, create zip archive and temp dir
     with closing(open(ns.input_path)) as f:
         line = f.readline().strip()
         if line:
             user_ids = map(int, line.split('\t'))
         else:
-            print >> sys.stderr, '%s: error: empty input file: %s' % ns.input_path
+            print >> sys.stderr, '%s: error: empty cohort file: %s' % ns.input_path
             sys.exit(1)
+
+    # connect to DB
+    try:
+        conn = connect(read_default_file=ns.config_file)
+    except InterfaceError, e:
+        print >> sys.stderr, '%s: error: %s' % (__prog__, e.args[1])
+        sys.exit(1)
+
+    # create output archive and temp working dir
     zip_path = os.path.splitext(os.path.basename(ns.input_path))[0] + '.npz'
     zip_path = os.path.join(ns.output_dir, zip_path)
     temp_dir = mkdtemp()
 
     with closing(ZipFile(zip_path, 'w')) as zf:
 
-        # connect and run query 
-        conn = connect(read_default_file=ns.config_file)
-        for uid in user_ids:
-            # compute rates and save to file
-            with conn.cursor() as cursor:
-                cursor.execute(query, (uid,))
+        # compute user rates and write them into the zip file
+        with conn.cursor() as cursor:
+            for uid in user_ids:
+                cursor.execute(_query, (uid,))
                 rows = list(cursor)
-                path = process(rows, uid, temp_dir)
-                if path is None:
+                if len(rows) == 0:
                     continue
+                data = userrate(rows)
+                path = os.path.join(temp_dir, '%d.npy' % uid)
+                np.save(temp_dir, data)
                 zf.write(path, os.path.basename(path))
                 os.remove(path)
 
     # remove temp dir
     os.removedirs(temp_dir)
 
-    # compute rates for this cohort and save them to file
-    rate_path = os.path.splitext(os.path.basename(ns.input_path))[0] + '.tsv'
-    rate_path = os.path.join(ns.output_dir, rate_path)
-    rates = computerates(zip_path, ns.every, onlyns=ns.only)
-    np.savetxt(rate_path, rates, fmt='%d\t%12.8g\t%12.8g\t%d')
-    if ns.rates_only:
-        os.remove(zip_path)
-        print '%s: output saved to %s' % (datetime.now(), rate_path)
-    else:
-        print '%s: output saved to %s, cohort data to %s' % (datetime.now(),
-                rate_path, zip_path)
+    # tell user
+    print '%s: output saved to %s' % (datetime.now(), zip_path)
 
 if __name__ == '__main__':
-    # get arguments from command line
+    # parse arguments from command line
     ns = parser.parse_args()
     main(ns)
 
