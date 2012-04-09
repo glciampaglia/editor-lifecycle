@@ -26,6 +26,7 @@ __email__ = "gciampaglia@wikimedia.org"
 import sys
 import os
 import numpy as np
+from matplotlib.font_manager import FontProperties
 import matplotlib.pyplot as pp
 from argparse import ArgumentParser
 from scipy.optimize import curve_fit
@@ -187,8 +188,9 @@ def main(ns):
     pp.figure()
     xx = np.linspace(x.min(), x.max(), endpoint=True, num=len(x) * 3 - 1)
     yy = model(xx)
-    pp.plot(xx, yy, **_kwargs2)
+    pp.plot(xx, yy, label=str(model), **_kwargs2)
     pp.errorbar(x, y, ye, **_kwargs1)
+    pp.legend(loc='best',prop=FontProperties(size='x-small'))
 
     # set axes scale
     if ns.loglog:
